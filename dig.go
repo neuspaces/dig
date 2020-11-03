@@ -59,8 +59,9 @@ type optionFunc func(*Container)
 func (f optionFunc) applyOption(c *Container) { f(c) }
 
 type provideOptions struct {
-	Name  string
-	Group string
+	Name     string
+	Group    string
+	Override bool
 }
 
 func (o *provideOptions) Validate() error {
@@ -124,6 +125,13 @@ func Name(name string) ProvideOption {
 func Group(group string) ProvideOption {
 	return provideOptionFunc(func(opts *provideOptions) {
 		opts.Group = group
+	})
+}
+
+//
+func Override() ProvideOption {
+	return provideOptionFunc(func(opts *provideOptions) {
+		opts.Override = true
 	})
 }
 
@@ -473,7 +481,7 @@ func (c *Container) provide(ctor interface{}, opts provideOptions) error {
 		return err
 	}
 
-	keys, err := c.findAndValidateResults(n)
+	keys, err := c.findAndValidateResults(n, opts.Override)
 	if err != nil {
 		return err
 	}
@@ -504,7 +512,7 @@ func (c *Container) provide(ctor interface{}, opts provideOptions) error {
 }
 
 // Builds a collection of all result types produced by this node.
-func (c *Container) findAndValidateResults(n *node) (map[key]struct{}, error) {
+func (c *Container) findAndValidateResults(n *node, override bool) (map[key]struct{}, error) {
 	var err error
 	keyPaths := make(map[key]string)
 	walkResult(n.ResultList(), connectionVisitor{
@@ -512,6 +520,7 @@ func (c *Container) findAndValidateResults(n *node) (map[key]struct{}, error) {
 		n:        n,
 		err:      &err,
 		keyPaths: keyPaths,
+		override: override,
 	})
 
 	if err != nil {
@@ -557,6 +566,8 @@ type connectionVisitor struct {
 	//     }
 	//   })
 	currentResultPath []string
+
+	override bool
 }
 
 func (cv connectionVisitor) AnnotateWithField(f resultObjectField) resultVisitor {
@@ -589,17 +600,19 @@ func (cv connectionVisitor) Visit(res result) resultVisitor {
 			return nil
 		}
 
-		if ps := cv.c.providers[k]; len(ps) > 0 {
-			cons := make([]string, len(ps))
-			for i, p := range ps {
-				cons[i] = fmt.Sprint(p.Location())
-			}
+		if !cv.override {
+			if ps := cv.c.providers[k]; len(ps) > 0 {
+				cons := make([]string, len(ps))
+				for i, p := range ps {
+					cons[i] = fmt.Sprint(p.Location())
+				}
 
-			*cv.err = errf(
-				"cannot provide %v from %v", k, path,
-				"already provided by %v", strings.Join(cons, "; "),
-			)
-			return nil
+				*cv.err = errf(
+					"cannot provide %v from %v", k, path,
+					"already provided by %v", strings.Join(cons, "; "),
+				)
+				return nil
+			}
 		}
 
 		cv.keyPaths[k] = path
