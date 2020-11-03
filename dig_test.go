@@ -2912,3 +2912,22 @@ func BenchmarkProvideCycleDetection(b *testing.B) {
 		c.Provide(newA)
 	}
 }
+
+func TestProvideOptionOverride(t *testing.T) {
+	t.Run("override", func(t *testing.T) {
+		type A struct{ idx int }
+
+		c := New()
+
+		require.NoError(t, c.Provide(func() A {
+			return A{1}
+		}))
+		require.NoError(t, c.Provide(func() A {
+			return A{2}
+		}, Override()))
+
+		require.NoError(t, c.Invoke(func(a A) {
+			require.Equal(t, 2, a.idx)
+		}))
+	})
+}
